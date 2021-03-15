@@ -1,4 +1,4 @@
-﻿// Copyright 2015 - Felix Obermaier (www.ivv-aachen.de)
+// Copyright 2015 - Felix Obermaier (www.ivv-aachen.de)
 //
 // This file is part of SharpMap.Layers.AnimatedGif.
 // SharpMap.Layers.AnimatedGif is free software; you can redistribute it and/or modify
@@ -63,8 +63,10 @@ namespace SharpMap.Layers
         private MapBox _mapBox;
         private Image _animatedGif;
 		private readonly IProvider _provider;
-	    private readonly Dictionary<uint, PictureBox> _pictureBoxes; 
-
+	    private readonly Dictionary<uint, PictureBox> _pictureBoxes;
+	    private readonly PictureBox _pictureBox;
+	    private Image _renderGif;
+	    private ImageAnimator _imageAnimator;
 
         /// <summary>
         /// Creates an instance of this class
@@ -72,21 +74,23 @@ namespace SharpMap.Layers
         /// <param name="layername">The layer name</param>
         /// <param name="provider">The provider</param>
         public AnimatedGifLayer(string layername, IProvider provider)
+            : base()
 		{
-            var rs = Assembly.GetExecutingAssembly().GetManifestResourceStream("SharpMap.Layers.GreenDot.gif");
+            using (var rs = Assembly.GetExecutingAssembly().GetManifestResourceStream("SharpMap.Layers.GreenDot.gif"))
+            {
+                if (rs != null)
+                {
+                    _animatedGif = Image.FromStream(rs);
+                    //rs.Dispose();
+                }
+            }
 
-			if (rs != null)
-			{	_animatedGif = Image.FromStream(rs);
-				//rs.Dispose();
-			}
-			
-			LayerName = layername;
-			_provider = provider;
-            SourceFactory = new NetTopologySuite.Geometries.GeometryFactory(
-                NetTopologySuite.Geometries.GeometryFactory.Default.PrecisionModel,_provider.SRID,
-                NetTopologySuite.Geometries.GeometryFactory.Default.CoordinateSequenceFactory                );
+            LayerName = layername;
 
+            _provider = provider;
             _pictureBoxes = new Dictionary<uint, PictureBox>();
+            _pictureBox = new TransparentPicBox();
+		    _pictureBox.AutoSize = false;
 		}
 		
 		/// <summary>
@@ -123,8 +127,19 @@ namespace SharpMap.Layers
             if (handler != null) handler(this, e);
         }
 
+	    private static ImageCodecInfo GetEncoder(ImageFormat format)
+	    {
+	        var codecs = ImageCodecInfo.GetImageEncoders();
+	        foreach (var codec in codecs)
+	        {
+	            if (codec.FormatID == format.Guid)
+	                return codec;
+	        }
+	        return null;
+	    }
 
-        /// <summary>
+
+	    /// <summary>
         /// Event raised when the <see cref="MapBox"/> is about to change
         /// </summary>
         public event EventHandler<CancelEventArgs> MapControlChanging;
@@ -142,15 +157,18 @@ namespace SharpMap.Layers
             {
                 if (_mapBox != null)
                 {
-                    _mapBox.MapZooming -= HandleMapZooming;
-                    _mapBox.MapCenterChanged -= HandleMapCenterChanged;
+                    //_mapBox.MapZooming -= HandleMapZooming;
+                    //_mapBox.MapCenterChanged -= HandleMapCenterChanged;
+                    new MethodInvoker(() => _mapBox.Controls.Remove(_pictureBox)).Invoke();
+
+                    foreach (var value in _pictureBoxes.Values)
+                    {
+                        var value1 = value;
+                        new MethodInvoker(() => _mapBox.Controls.Remove(value1)).Invoke();
+                    }
                 }
 
-                foreach (var value in _pictureBoxes.Values)
-                {
-                    var value1 = value;
-                    new MethodInvoker(() => _mapBox.Controls.Remove(value1)).Invoke();
-                }
+
             }
         }
 
@@ -165,19 +183,27 @@ namespace SharpMap.Layers
         /// <param name="e">The event's arguments</param>
         protected virtual void OnMapControlChanged(EventArgs e)
         {
+            if (_mapBox == null)
+                return;
+
             foreach (var value in _pictureBoxes.Values)
             {
                 var value1 = value;
                 new MethodInvoker(() => _mapBox.Controls.Add(value1)).Invoke();
             }
 
-            _mapBox.MapZooming += HandleMapZooming;
-            _mapBox.MapCenterChanged += HandleMapCenterChanged;
+            new MethodInvoker(() => _mapBox.Controls.Add(_pictureBox)).Invoke();
+            _pictureBox.Location = Point.Empty;
+            _pictureBox.Size = _mapBox.Size;
+
+            //_mapBox.MapZooming += HandleMapZooming;
+            //_mapBox.MapCenterChanged += HandleMapCenterChanged;
 
             var handler = MapControlChanged;
             if (handler != null) handler(this, e);
         }
 
+        /*
 	    private void HandleMapZooming(double zoom)
 	    {
 	        DisplayPictureBoxes(false);
@@ -185,7 +211,7 @@ namespace SharpMap.Layers
         private void HandleMapCenterChanged(Coordinate center)
         {
             DisplayPictureBoxes(false);
-        }
+        }*/
 
 
 	    /// <summary>
@@ -281,7 +307,7 @@ namespace SharpMap.Layers
 	                    _pictureBoxes.Add(oid, (PictureBox) _mapBox.Controls[ctname]);
 	                }
 
-	                var point = this.ToTarget(_provider.GetGeometryByID(oid), map.Factory).Coordinate;
+	                var point = this.ToTarget(_provider.GetGeometryByID(oid)).Coordinate;
 	                var np = Point.Subtract(Point.Truncate(map.WorldToImage(point)), gifSize);
 
                     // Draw on the map
@@ -314,9 +340,11 @@ namespace SharpMap.Layers
 
             _mapBox.Invoke(new MethodInvoker(() => _mapBox.ResumeLayout()));
             Monitor.Exit(_renderLock);
-			base.Render(g, map);
 
+			// Signal layer has been rendered.
+			OnLayerRendered(g);
 		}
+        
 
         [MethodImpl(MethodImplOptions.Synchronized)]
 	    private void DisplayPictureBoxes(bool display)
@@ -396,7 +424,7 @@ namespace SharpMap.Layers
             if (numTables < ds.Tables.Count)
 	        {
 	            foreach (FeatureDataRow fdr in ds.Tables[numTables-1].Rows)
-	                fdr.Geometry = this.ToTarget(fdr.Geometry, MapControl.Map.Factory);
+	                fdr.Geometry = this.ToTarget(fdr.Geometry);
 	        }
 	    }
 
@@ -404,23 +432,17 @@ namespace SharpMap.Layers
 	    {
             if (!IsQueryEnabled) return;
 
-            var geom = this.ToSource(geometry, SourceFactory);
+            var geom = this.ToSource(geometry);
             var numTables = ds.Tables.Count;
             DataSource.ExecuteIntersectionQuery(geom, ds);
 
             if (numTables < ds.Tables.Count)
             {
                 foreach (FeatureDataRow fdr in ds.Tables[numTables - 1].Rows)
-                    fdr.Geometry = this.ToTarget(fdr.Geometry, MapControl.Map.Factory);
+                    fdr.Geometry = this.ToTarget(fdr.Geometry);
             }
         }
 
 	    public bool IsQueryEnabled { get; set; }
-
-#if SharpMap_1_1
-        private IGeometryFactory SourceFactory { get; set; }
-        //private IGeometryFactory TargetFactory { get; set; }
-#endif
-
-	}
+    }
 }

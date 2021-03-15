@@ -1,0 +1,32 @@
+<Project>
+
+  <PropertyGroup>
+    <SolutionDir Condition=" '$(SolutionDir)' == '' ">$(MSBuildThisFileDirectory)</SolutionDir>
+
+    <Copyright>Copyright 2014-$([System.DateTime]::UtcNow.Year) SharpMap - Team</Copyright>
+    <Authors>SharpMap - Team</Authors>
+    <NoWarn>1701;1702;2100;2235</NoWarn>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <RepositoryUrl>https://github.com/SharpMap/SharpMap.BusinessObjects.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/SharpMap/SharpMap.BusinessObjects</PackageProjectUrl>
+    <PackageIcon>SharpMap.Logo.png</PackageIcon>
+    <PackageLicenseExpression>LGPL-2.1-or-later</PackageLicenseExpression>
+  </PropertyGroup>
+  <PropertyGroup Label="SourceLink Info">
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SourceLink adds stuff to let debuggers step into our code. -->
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+    <PackageReference Include="GitVersionTask" Version="5.5.1" PrivateAssets="All" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<None Include="$(SolutionDir)SharpMap.Logo.png" Pack="true" PackagePath="\"/>
+	</ItemGroup>
+</Project>
